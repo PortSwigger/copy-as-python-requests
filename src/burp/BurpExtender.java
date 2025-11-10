@@ -15,9 +15,11 @@ public class BurpExtender implements IBurpExtender, IContextMenuFactory, Clipboa
 
 	private final static String NAME = "Copy as requests";
 	private final static String SESSION_MENU_ITEM = NAME + " with session object";
+	private final static String PREVIOUS_SESSION_MENU_ITEM = NAME + " with session object (using previous session)";
 	private final static String[] PYTHON_ESCAPE = new String[256];
 	private final static String SESSION_VAR = "session";
 
+	
 	static {
 		for (int i = 0x00; i <= 0xFF; i++) PYTHON_ESCAPE[i] = String.format("\\x%02x", i);
 		for (int i = 0x20; i < 0x80; i++) PYTHON_ESCAPE[i] = String.valueOf((char)i);
@@ -44,28 +46,35 @@ public class BurpExtender implements IBurpExtender, IContextMenuFactory, Clipboa
 		i1.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				copyMessages(messages, false);
+				copyMessages(messages, false,false);
 			}
 		});
 		JMenuItem i2 = new JMenuItem(SESSION_MENU_ITEM);
 		i2.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				copyMessages(messages, true);
+				copyMessages(messages, true,false);
 			}
 		});
-		return Arrays.asList(i1, i2);
+		JMenuItem i3 = new JMenuItem(PREVIOUS_SESSION_MENU_ITEM);
+		i3.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				copyMessages(messages, true, true);
+			}
+		});
+		return Arrays.asList(i1, i2, i3);
 	}
 
 	private enum BodyType {JSON, DATA};
 
-	private void copyMessages(IHttpRequestResponse[] messages, boolean withSessionObject) {
-		StringBuilder py = new StringBuilder("import requests");
+	private void copyMessages(IHttpRequestResponse[] messages, boolean withSessionObject, boolean reusingSession) {
+		StringBuilder py = new StringBuilder(reusingSession ? "" : "import requests");
 		String requestsMethodPrefix =
 			"\n" + (withSessionObject ? SESSION_VAR : "requests") + ".";
 		int i = 0;
 
-		if (withSessionObject) {
+		if (withSessionObject && !reusingSession) {
 			py.append("\n\n" + SESSION_VAR + " = requests.session()");
 		}
 
@@ -73,11 +82,14 @@ public class BurpExtender implements IBurpExtender, IContextMenuFactory, Clipboa
 			IRequestInfo ri = helpers.analyzeRequest(message);
 			byte[] req = message.getRequest();
 			String prefix = "burp" + i++ + "_";
-			py.append("\n\n").append(prefix).append("url = \"");
+			if (!reusingSession){
+				py.append("\n\n");
+			}
+			py.append(prefix).append("url = \"");
 			py.append(escapeQuotes(ri.getUrl().toString()));
 			py.append('"');
 			List<String> headers = ri.getHeaders();
-			boolean cookiesExist = processCookies(prefix, py, headers);
+			boolean cookiesExist = reusingSession ? false : processCookies(prefix, py, headers);
 			py.append('\n').append(prefix).append("headers = {");
 			processHeaders(py, headers);
 			py.append('}');
